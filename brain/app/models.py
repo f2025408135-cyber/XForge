@@ -12,6 +12,41 @@ class Target(Base):
     is_active = Column(Boolean, default=True)
 
     tasks = relationship("Task", back_populates="target")
+    subdomains = relationship("Subdomain", back_populates="target", cascade="all, delete-orphan")
+
+class Subdomain(Base):
+    __tablename__ = "subdomains"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id"))
+    hostname = Column(String, nullable=False, index=True)
+    ip_address = Column(String, nullable=True)
+    
+    target = relationship("Target", back_populates="subdomains")
+    ports = relationship("Port", back_populates="subdomain", cascade="all, delete-orphan")
+    vulnerabilities = relationship("Vulnerability", back_populates="subdomain", cascade="all, delete-orphan")
+
+class Port(Base):
+    __tablename__ = "ports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    subdomain_id = Column(Integer, ForeignKey("subdomains.id"))
+    port_number = Column(Integer, nullable=False)
+    service = Column(String, nullable=True)
+    
+    subdomain = relationship("Subdomain", back_populates="ports")
+
+class Vulnerability(Base):
+    __tablename__ = "vulnerabilities"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    subdomain_id = Column(Integer, ForeignKey("subdomains.id"))
+    template_id = Column(String, nullable=False) # e.g., cve-2021-44228
+    severity = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    matched_at = Column(String, nullable=False)
+    
+    subdomain = relationship("Subdomain", back_populates="vulnerabilities")
 
 class Task(Base):
     __tablename__ = "tasks"
