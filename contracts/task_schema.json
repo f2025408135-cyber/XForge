@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FuzzTask",
+  "description": "A command from the Brain for the Executor to perform an attack workflow.",
+  "type": "object",
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Unique identifier for the fuzzing task."
+    },
+    "target_url": {
+      "type": "string"
+    },
+    "attack_type": {
+      "type": "string",
+      "enum": ["bola", "sqli", "race_condition", "nuclei_scan"]
+    },
+    "payloads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "method": { "type": "string" },
+          "path": { "type": "string" },
+          "headers": { "type": "object" },
+          "body": { "type": "string" }
+        },
+        "required": ["method", "path"]
+      }
+    }
+  },
+  "required": ["task_id", "target_url", "attack_type"]
+}
