@@ -47,7 +47,17 @@ def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_task)
     
-    # FUTURE: Push task schema payload to RabbitMQ for Executor to pick up (Chunk 4)
+    # Push task schema payload to RabbitMQ for Executor to pick up
+    from .queue import publish_task
+    import uuid
+    
+    payload = {
+        "task_id": f"task-{new_task.id}-{uuid.uuid4().hex[:8]}",
+        "target_url": f"https://{db_target.domain}",
+        "attack_type": new_task.attack_type,
+        "payloads": [] # Populated later by the Theorist Agent
+    }
+    publish_task(payload)
     
     return new_task
 
