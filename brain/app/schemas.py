@@ -12,6 +12,7 @@ class TaskCreate(TaskBase):
 class Task(TaskBase):
     id: int
     status: str
+    payloads: Optional[str] = None
     created_at: datetime
 
     class Config:

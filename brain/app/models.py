@@ -55,6 +55,7 @@ class Task(Base):
     target_id = Column(Integer, ForeignKey("targets.id"))
     attack_type = Column(String, nullable=False)  # e.g., 'bola', 'sqli'
     status = Column(String, default="PENDING")    # PENDING, RUNNING, COMPLETED, FAILED
+    payloads = Column(String, nullable=True)      # Storing JSON string of generated payloads for tracking
     created_at = Column(DateTime, default=datetime.utcnow)
 
     target = relationship("Target", back_populates="tasks")
