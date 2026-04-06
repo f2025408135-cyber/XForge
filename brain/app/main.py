@@ -1,18 +1,56 @@
-from fastapi import FastAPI
-import os
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+
+from . import models, schemas
+from .database import engine, get_db
+
+# Create DB tables
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="XForge Brain API", description="Autonomous Offensive Security Intelligence Layer")
 
 @app.on_event("startup")
 async def startup_event():
     print("XForge Brain initializing...")
-    # Initialize DB connections, Redis, and RabbitMQ (Chunk 3/4)
 
 @app.get("/")
 def read_root():
-    return {"status": "XForge Brain is operational", "components": "waiting for tasks"}
+    return {"status": "XForge Brain is operational"}
 
-@app.post("/tasks")
-def create_task(target: str):
-    # This will trigger the Recon Agent and drop messages into RabbitMQ for the Executor
-    return {"message": f"Task created for {target}. Recon started."}
+@app.post("/targets/", response_model=schemas.Target)
+def create_target(target: schemas.TargetCreate, db: Session = Depends(get_db)):
+    db_target = db.query(models.Target).filter(models.Target.domain == target.domain).first()
+    if db_target:
+        raise HTTPException(status_code=400, detail="Target domain already registered")
+    
+    new_target = models.Target(domain=target.domain)
+    db.add(new_target)
+    db.commit()
+    db.refresh(new_target)
+    return new_target
+
+@app.get("/targets/", response_model=List[schemas.Target])
+def read_targets(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    targets = db.query(models.Target).offset(skip).limit(limit).all()
+    return targets
+
+@app.post("/tasks/", response_model=schemas.Task)
+def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
+    # Verify target exists
+    db_target = db.query(models.Target).filter(models.Target.id == task.target_id).first()
+    if not db_target:
+        raise HTTPException(status_code=404, detail="Target not found")
+        
+    new_task = models.Task(target_id=task.target_id, attack_type=task.attack_type)
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    
+    # FUTURE: Push task schema payload to RabbitMQ for Executor to pick up (Chunk 4)
+    
+    return new_task
+
+@app.get("/tasks/", response_model=List[schemas.Task])
+def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return db.query(models.Task).offset(skip).limit(limit).all()
