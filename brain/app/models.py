@@ -59,3 +59,16 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     target = relationship("Target", back_populates="tasks")
+    findings = relationship("Finding", back_populates="task", cascade="all, delete-orphan")
+
+class Finding(Base):
+    __tablename__ = "findings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"))
+    score = Column(Integer, default=0) # 0 to 100 confidence
+    description = Column(String, nullable=True)
+    raw_evidence = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    task = relationship("Task", back_populates="findings")

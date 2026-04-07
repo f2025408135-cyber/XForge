@@ -9,11 +9,25 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     target_id: int
 
+class FindingBase(BaseModel):
+    score: int
+    description: Optional[str] = None
+    raw_evidence: Optional[str] = None
+
+class Finding(FindingBase):
+    id: int
+    task_id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 class Task(TaskBase):
     id: int
     status: str
     payloads: Optional[str] = None
     created_at: datetime
+    findings: List[Finding] = []
 
     class Config:
         from_attributes = True
