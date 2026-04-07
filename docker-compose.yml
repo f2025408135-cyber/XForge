@@ -26,6 +26,13 @@ services:
       - "5672:5672"
       - "15672:15672"
 
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadata:/chroma/chroma
+
   brain:
     build: 
       context: ./brain
@@ -35,11 +42,12 @@ services:
       - RABBITMQ_URL=amqp://xforge:xforge_password@rabbitmq:5672/
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       - postgres
       - redis
       - rabbitmq
+      - chromadb
 
   executor:
     build:
@@ -51,3 +59,4 @@ services:
 
 volumes:
   pgdata:
+  chromadata:
