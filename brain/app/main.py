@@ -64,3 +64,14 @@ def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
 @app.get("/tasks/", response_model=List[schemas.Task])
 def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return db.query(models.Task).offset(skip).limit(limit).all()
+
+@app.get("/reports/{target_id}")
+def generate_report(target_id: int, db: Session = Depends(get_db)):
+    from .reporter import ReportGenerator
+    reporter = ReportGenerator(db)
+    report_md = reporter.generate_markdown_report(target_id)
+    
+    if "Error: Target not found." in report_md:
+        raise HTTPException(status_code=404, detail="Target not found")
+        
+    return {"target_id": target_id, "markdown_report": report_md}
