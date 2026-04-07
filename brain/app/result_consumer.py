@@ -8,6 +8,7 @@ from app.database import SessionLocal
 from app.models import Task, Finding
 from app.evaluator import EvaluatorAgent
 from app.poc_generator import PoCGenerator
+from app.recon_parser import ReconParser
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://xforge:xforge_password@localhost:5672/")
 
@@ -45,13 +46,38 @@ class ResultConsumer:
 
                 results = data.get("results", [])
                 
-                # Hand off to the Evaluator Agent based on attack type
+                attack_type = data.get("attack_type")
+                
+                # --- Phase 1: Reconnaissance Ingestion ---
+                if attack_type in ["subfinder_scan", "naabu_scan", "nuclei_scan"]:
+                    parser = ReconParser(db, task.target_id)
+                    
+                    # We stored the raw JSON bytes in the 'Error' field of FuzzResult in Go for simplicity
+                    for res in results:
+                        raw_json_str = res.get("Error", "[]")
+                        try:
+                            parsed_json = json.loads(raw_json_str)
+                            if attack_type == "subfinder_scan":
+                                parser.ingest_subfinder(parsed_json)
+                            elif attack_type == "naabu_scan":
+                                parser.ingest_naabu(parsed_json)
+                            elif attack_type == "nuclei_scan":
+                                parser.ingest_nuclei(parsed_json)
+                        except json.JSONDecodeError:
+                            print(f"Failed to parse JSON for {attack_type} result.")
+
+                    task.status = "COMPLETED"
+                    db.commit()
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+
+                # --- Phase 2: Vulnerability Evaluation ---
                 eval_report = {"vuln_score": 0, "findings": []}
-                if data.get("attack_type") == "bola":
+                if attack_type == "bola":
                     eval_report = self.evaluator.evaluate_bola(results)
                 
                 # Evolve this to handle async LLM logic evaluations safely within threading context
-                elif data.get("attack_type") in ["logic_abuse", "race_condition", "injection"]:
+                elif attack_type in ["logic_abuse", "race_condition", "injection"]:
                     # Placeholder logic for async run in background thread or simple heuristic
                     eval_report = {"vuln_score": 0.5, "findings": ["Automated logic anomaly detected. Pending manual review."]}
 
