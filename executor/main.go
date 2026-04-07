@@ -26,9 +26,18 @@ func main() {
 
 		fmt.Println("Connected to RabbitMQ. Waiting for fuzzing tasks...")
 		
+		publisher, err := messaging.NewPublisher(amqpURL, "fuzz_results")
+		if err != nil {
+			log.Printf("Warning: Failed to connect to publisher: %v", err)
+		} else {
+			defer publisher.Close()
+		}
+
 		err = consumer.StartListening(func(task messaging.TaskPayload) {
 			log.Printf("Received Task [%s]: Initiating %s attack against %s", task.TaskID, task.AttackType, task.TargetURL)
-			// Trigger Go-based fuzzer workers here (Chunk 5)
+			// In full environment, we pass the task to fuzzer.Engine here
+			// results, err := fuzzerEngine.ExecuteTask(task)
+			// publisher.PublishResult(messaging.ResultPayload{TaskID: task.TaskID, ...})
 		})
 		
 		if err != nil {

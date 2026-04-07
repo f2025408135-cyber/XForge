@@ -13,6 +13,8 @@ app = FastAPI(title="XForge Brain API", description="Autonomous Offensive Securi
 @app.on_event("startup")
 async def startup_event():
     print("XForge Brain initializing...")
+    from .result_consumer import run_consumer_in_background
+    run_consumer_in_background()
 
 @app.get("/")
 def read_root():
