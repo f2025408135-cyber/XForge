@@ -48,6 +48,14 @@ func (e *Engine) ExecuteTask(task messaging.TaskPayload) ([]FuzzResult, error) {
 
 	log.Printf("Executing task %s (%s) with %d payloads against %s", task.TaskID, task.AttackType, len(task.Payloads), task.TargetURL)
 
+	if task.AttackType == "race_condition" {
+		return e.executeRaceCondition(task)
+	}
+
+	return e.executeSequentialPool(task)
+}
+
+func (e *Engine) executeSequentialPool(task messaging.TaskPayload) ([]FuzzResult, error) {
 	results := make([]FuzzResult, 0, len(task.Payloads))
 	
 	// Channels for the worker pool
@@ -131,6 +139,82 @@ func (e *Engine) ExecuteTask(task messaging.TaskPayload) ([]FuzzResult, error) {
 	close(resultsChan)
 
 	// Collect results
+	for res := range resultsChan {
+		results = append(results, res)
+	}
+
+	return results, nil
+}
+
+func (e *Engine) executeRaceCondition(task messaging.TaskPayload) ([]FuzzResult, error) {
+	// Race conditions require strict parallel execution. We prep all requests, hold them at a sync point, and fire simultaneously.
+	resultsChan := make(chan FuzzResult, len(task.Payloads))
+	
+	var wg sync.WaitGroup
+	var startWg sync.WaitGroup
+	
+	startWg.Add(1) // Block all workers until we trigger this WaitGroup
+
+	for _, p := range task.Payloads {
+		wg.Add(1)
+		go func(payload struct {
+			Method  string            `json:"method"`
+			Path    string            `json:"path"`
+			Headers map[string]string `json:"headers"`
+			Body    string            `json:"body"`
+		}) {
+			defer wg.Done()
+			
+			targetURI := task.TargetURL + payload.Path
+			var reqBody io.Reader
+			if payload.Body != "" {
+				reqBody = bytes.NewBuffer([]byte(payload.Body))
+			}
+
+			req, err := http.NewRequest(payload.Method, targetURI, reqBody)
+			if err != nil {
+				resultsChan <- FuzzResult{Error: err.Error(), Method: payload.Method, Path: payload.Path}
+				return
+			}
+			for k, v := range payload.Headers {
+				req.Header.Set(k, v)
+			}
+
+			// Block here until startWg.Done() is called from the main thread
+			startWg.Wait()
+
+			start := time.Now()
+			resp, err := e.client.Do(req)
+			duration := time.Since(start)
+
+			if err != nil {
+				resultsChan <- FuzzResult{Error: err.Error(), Method: payload.Method, Path: payload.Path, Duration: duration}
+				return
+			}
+
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			resultsChan <- FuzzResult{
+				Method:     payload.Method,
+				Path:       payload.Path,
+				StatusCode: resp.StatusCode,
+				BodyLen:    len(bodyBytes),
+				Duration:   duration,
+			}
+		}(p)
+	}
+
+	// Wait a tiny fraction of a second for all goroutines to queue up and hit startWg.Wait()
+	time.Sleep(50 * time.Millisecond)
+
+	// Unleash all requests simultaneously
+	startWg.Done()
+	
+	wg.Wait()
+	close(resultsChan)
+
+	var results []FuzzResult
 	for res := range resultsChan {
 		results = append(results, res)
 	}
