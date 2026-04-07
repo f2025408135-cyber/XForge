@@ -75,3 +75,15 @@ def generate_report(target_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Target not found")
         
     return {"target_id": target_id, "markdown_report": report_md}
+
+@app.post("/scan/full/{domain}")
+def trigger_full_scan(domain: str, db: Session = Depends(get_db)):
+    from .coordinator import MasterCoordinator
+    
+    # We strip any protocols for normalization
+    clean_domain = domain.replace("https://", "").replace("http://", "").split("/")[0]
+    
+    coordinator = MasterCoordinator(db)
+    result = coordinator.initiate_full_scan(clean_domain)
+    
+    return result
