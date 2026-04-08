@@ -61,6 +61,9 @@ class MasterCoordinator:
         nuclei_task = self.dispatch_task(target, "nuclei_scan")
         dispatched_tasks.append(nuclei_task.id)
 
+        katana_task = self.dispatch_task(target, "katana_scan")
+        dispatched_tasks.append(katana_task.id)
+
         # --- Phase 2: Autonomous Fuzzing (Logic, BOLA, Race, Injection) ---
         # In a fully asynchronous environment, this phase would trigger only after Phase 1 completes
         # and the OpenAPI spec is discovered. For the API response, we will trigger placeholder 

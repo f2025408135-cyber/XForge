@@ -59,6 +59,67 @@ class ReconParser:
         
         self.db.commit()
 
+    def ingest_katana(self, results: list):
+        """ Parses list of KatanaResult dicts into DiscoveredEndpoints for dynamic spec building """
+        from urllib.parse import urlparse, parse_qsl
+        import json
+        
+        for res in results:
+            req = res.get("request", {})
+            method = req.get("method", "GET")
+            endpoint = req.get("endpoint", "")
+            body = req.get("body", "")
+            
+            if not endpoint:
+                continue
+                
+            parsed_url = urlparse(endpoint)
+            path = parsed_url.path
+            
+            # Extract query params
+            query_params = [k for k, v in parse_qsl(parsed_url.query)]
+            
+            # Basic body param extraction
+            body_params = []
+            if body and (method in ["POST", "PUT", "PATCH"]):
+                try:
+                    # if it's json
+                    body_data = json.loads(body)
+                    if isinstance(body_data, dict):
+                        body_params = list(body_data.keys())
+                except json.JSONDecodeError:
+                    # if it's form data
+                    body_params = [k for k, v in parse_qsl(body)]
+
+            all_params = list(set(query_params + body_params))
+            
+            # Deduplicate by path and method
+            from .models import DiscoveredEndpoint
+            exists = self.db.query(DiscoveredEndpoint).filter_by(
+                target_id=self.target_id,
+                method=method,
+                path=path
+            ).first()
+            
+            if not exists:
+                new_ep = DiscoveredEndpoint(
+                    target_id=self.target_id,
+                    method=method,
+                    path=path,
+                    parameters=json.dumps(all_params) if all_params else None
+                )
+                self.db.add(new_ep)
+            else:
+                # Merge parameters if new ones found
+                if all_params:
+                    existing_params = []
+                    if exists.parameters:
+                        existing_params = json.loads(exists.parameters)
+                    merged = list(set(existing_params + all_params))
+                    exists.parameters = json.dumps(merged)
+                    
+        self.db.commit()
+
     def ingest_nuclei(self, results: list):
         """ Parses list of NucleiResult dicts """
         for res in results:

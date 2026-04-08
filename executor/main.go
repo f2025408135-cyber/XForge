@@ -61,6 +61,8 @@ func main() {
 				results = handleNaabu(task)
 			case "nuclei_scan":
 				results = handleNuclei(task)
+			case "katana_scan":
+				results = handleKatana(task)
 			default:
 				// Execute dynamic multi-step fuzzing tasks (BOLA, Logic Abuse, Race Conditions)
 				fuzzOut, err := fuzzerEngine.ExecuteTask(task)
@@ -125,6 +127,19 @@ func handleSubfinder(task messaging.TaskPayload) []messaging.FuzzResult {
 	out, err := wrapper.Run(domain)
 	if err != nil {
 		log.Printf("Subfinder failed: %v", err)
+		return nil
+	}
+	
+	jsonBytes, _ := json.Marshal(out)
+	return []messaging.FuzzResult{{BodyLen: len(jsonBytes), Error: string(jsonBytes)}}
+}
+
+func handleKatana(task messaging.TaskPayload) []messaging.FuzzResult {
+	wrapper := recon.NewKatanaWrapper("")
+	
+	out, err := wrapper.Run(task.TargetURL)
+	if err != nil {
+		log.Printf("Katana failed: %v", err)
 		return nil
 	}
 	

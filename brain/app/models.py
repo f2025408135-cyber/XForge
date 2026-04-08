@@ -48,6 +48,15 @@ class Vulnerability(Base):
     
     subdomain = relationship("Subdomain", back_populates="vulnerabilities")
 
+class DiscoveredEndpoint(Base):
+    __tablename__ = "discovered_endpoints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id"))
+    method = Column(String, nullable=False)
+    path = Column(String, nullable=False)
+    parameters = Column(String, nullable=True) # JSON string of discovered query/body params
+
 class Task(Base):
     __tablename__ = "tasks"
 

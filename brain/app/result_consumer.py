@@ -71,46 +71,50 @@ class ResultConsumer:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 
-                # --- Phase 2: Vulnerability Evaluation ---
-                eval_report = {"vuln_score": 0, "findings": []}
-                if attack_type == "bola":
-                    eval_report = self.evaluator.evaluate_bola(results)
+                # --- Phase 2: Vulnerability Evaluation & Feedback Loop ---
+                import asyncio
+                from app.feedback_loop import FeedbackLoop
                 
-                # Evolve this to handle async LLM logic evaluations safely within threading context
-                elif attack_type in ["logic_abuse", "race_condition", "injection"]:
-                    # Placeholder logic for async run in background thread or simple heuristic
-                    eval_report = {"vuln_score": 0.5, "findings": ["Automated logic anomaly detected. Pending manual review."]}
+                feedback_agent = FeedbackLoop(db)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    eval_report, is_complete = loop.run_until_complete(
+                        feedback_agent.process_fuzz_result(task, results, data.get("target_url"))
+                    )
+                    
+                    # If it was requeued by the feedback loop, skip reporting
+                    if not is_complete:
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                        return
+                    
+                    # If the evaluator found something, store it as a Finding
+                    if eval_report.get("vuln_score", 0) > 0:
+                        for description in eval_report.get("findings", []):
+                            raw_poc = ""
+                            if results:
+                                p = results[0]
+                                bundle = PoCGenerator.create_poc_bundle(
+                                    method=p.get("Method", "GET"),
+                                    target_url=data.get("target_url"),
+                                    path=p.get("Path", "/"),
+                                    headers={"Authorization": "Bearer injected"}, 
+                                    body=p.get("Body", "")
+                                )
+                                raw_poc = bundle["curl"]
 
-                # Update the task status to completed
-                task.status = "COMPLETED"
-
-                # If the evaluator found something, store it as a Finding
-                if eval_report.get("vuln_score", 0) > 0:
-                    for description in eval_report.get("findings", []):
-                        
-                        # Generate a dynamic PoC based on the first successful result matching the anomaly
-                        # Usually, the Evaluator would pass back the specific payload index, using generic 0 here.
-                        raw_poc = ""
-                        if results:
-                            p = results[0]
-                            bundle = PoCGenerator.create_poc_bundle(
-                                method=p.get("Method", "GET"),
-                                target_url=data.get("target_url"),
-                                path=p.get("Path", "/"),
-                                headers={"Authorization": "Bearer injected"}, # Contextual headers
-                                body=p.get("Body", "")
+                            finding = Finding(
+                                task_id=task.id,
+                                score=int(eval_report.get("vuln_score", 0) * 100),
+                                description=description,
+                                raw_evidence=raw_poc
                             )
-                            raw_poc = bundle["curl"]
-
-                        finding = Finding(
-                            task_id=task.id,
-                            score=int(eval_report.get("vuln_score", 0) * 100),
-                            description=description,
-                            raw_evidence=raw_poc
-                        )
-                        db.add(finding)
-                
-                db.commit()
+                            db.add(finding)
+                    
+                    db.commit()
+                finally:
+                    loop.close()
 
             finally:
                 db.close()
