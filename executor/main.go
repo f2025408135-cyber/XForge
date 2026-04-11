@@ -63,6 +63,8 @@ func main() {
 				results = handleNuclei(task)
 			case "katana_scan":
 				results = handleKatana(task)
+			case "httpx_probe":
+				results = handleHttpx(task)
 			default:
 				// Execute dynamic multi-step fuzzing tasks (BOLA, Logic Abuse, Race Conditions)
 				fuzzOut, err := fuzzerEngine.ExecuteTask(task)
@@ -127,6 +129,20 @@ func handleSubfinder(task messaging.TaskPayload) []messaging.FuzzResult {
 	out, err := wrapper.Run(domain)
 	if err != nil {
 		log.Printf("Subfinder failed: %v", err)
+		return nil
+	}
+	
+	jsonBytes, _ := json.Marshal(out)
+	return []messaging.FuzzResult{{BodyLen: len(jsonBytes), Error: string(jsonBytes)}}
+}
+
+func handleHttpx(task messaging.TaskPayload) []messaging.FuzzResult {
+	wrapper := recon.NewHttpxWrapper("")
+	
+	// Assuming TargetURL contains a comma-separated list of subdomains to probe
+	out, err := wrapper.Run([]string{task.TargetURL})
+	if err != nil {
+		log.Printf("Httpx failed: %v", err)
 		return nil
 	}
 	

