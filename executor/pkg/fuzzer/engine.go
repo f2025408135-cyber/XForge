@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xforge/executor/pkg/evasion"
 	"github.com/xforge/executor/pkg/httpclient"
 	"github.com/xforge/executor/pkg/messaging"
 )
@@ -27,6 +28,7 @@ type FuzzResult struct {
 type Engine struct {
 	client      *httpclient.FuzzClient
 	concurrency int
+	evasion     *evasion.EvasionEngine
 }
 
 // NewEngine creates an execution engine capable of concurrent multi-step attacks.
@@ -37,6 +39,7 @@ func NewEngine(client *httpclient.FuzzClient, concurrency int) *Engine {
 	return &Engine{
 		client:      client,
 		concurrency: concurrency,
+		evasion:     evasion.NewEvasionEngine(),
 	}
 }
 
@@ -103,6 +106,35 @@ func (e *Engine) executeSequentialPool(task messaging.TaskPayload) ([]FuzzResult
 				if err != nil {
 					resultsChan <- FuzzResult{Error: err.Error(), Method: job.Payload.Method, Path: job.Payload.Path, Duration: duration}
 					continue
+				}
+
+				// Basic active WAF evasion logic
+				// If we get blocked on the very first try, apply generic evasion techniques
+				// and fire the exact same request again transparently before sending failure back to Python.
+				if resp.StatusCode == 403 || resp.StatusCode == 406 {
+					resp.Body.Close()
+					
+					// Deep copy request since bodies are consumed
+					var retryBody io.Reader
+					if job.Payload.Body != "" {
+						retryBody = bytes.NewBuffer([]byte(job.Payload.Body))
+					}
+					retryReq, _ := http.NewRequest(job.Payload.Method, targetURI, retryBody)
+					for k, v := range job.Payload.Headers {
+						retryReq.Header.Set(k, v)
+					}
+					
+					// Apply Evasion Engine Mutators
+					e.evasion.ApplyAll(retryReq)
+					
+					retryStart := time.Now()
+					retryResp, retryErr := e.client.Do(retryReq)
+					
+					if retryErr == nil {
+						resp = retryResp
+						duration = time.Since(retryStart)
+						job.Payload.Path = retryReq.URL.String() // Note the mutation path for reporting
+					}
 				}
 
 				// Read response to calculate anomalies (size differences, unexpected status codes)
