@@ -1,5 +1,6 @@
 import pytest
 from app.result_consumer import ResultConsumer
+from app.models import Task, Finding
 
 def test_consumer_callback_parses_json(mocker):
     # We mock the DB so we don't need a real SQLite connection for unit test
@@ -9,15 +10,21 @@ def test_consumer_callback_parses_json(mocker):
     
     mock_task = mocker.MagicMock()
     mock_task.id = 1
+    mock_task.attack_type = "bola"  # <----- Missing! The feedback_loop checks `task.attack_type == "bola"` !
     mock_session.query().filter().first.return_value = mock_task
     
-    mock_evaluator = mocker.patch("app.result_consumer.EvaluatorAgent")
-    mock_eval_instance = mock_evaluator.return_value
+    # We mock it here:
+    mock_evaluator_cls = mocker.patch("app.feedback_loop.EvaluatorAgent")
+    mock_eval_instance = mock_evaluator_cls.return_value
     mock_eval_instance.evaluate_bola.return_value = {
         "vuln_score": 0.9,
         "findings": ["BOLA Verified"]
     }
     
+    # Mock memory and theorist so ChromaDB and LLM aren't initialized
+    mocker.patch("app.feedback_loop.PayloadMemory")
+    mocker.patch("app.feedback_loop.TheoristAgent")
+
     mock_poc = mocker.patch("app.result_consumer.PoCGenerator")
     mock_poc.create_poc_bundle.return_value = {"curl": "curl mock"}
     
@@ -36,7 +43,7 @@ def test_consumer_callback_parses_json(mocker):
     # Verify the message was acknowledged
     mock_ch.basic_ack.assert_called_once_with(delivery_tag="tag123")
     
-    # Verify Evaluator was called because it was a 'bola' task
+    # Verify evaluate_bola was called
     mock_eval_instance.evaluate_bola.assert_called_once()
     
     # Verify Finding was added to DB because score > 0

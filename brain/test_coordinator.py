@@ -38,12 +38,12 @@ def test_initiate_full_scan(mocker, db_session):
     
     assert result["status"] == "Scan Initiated"
     assert result["domain"] == "bugcrowd.com"
-    assert result["tasks_dispatched"] == 7
-    assert len(result["task_ids"]) == 7
+    assert result["tasks_dispatched"] == 8
+    assert len(result["task_ids"]) == 8
     
     # Check DB Population
     tasks = db_session.query(Task).all()
-    assert len(tasks) == 7
+    assert len(tasks) == 8
     
     attack_types = [t.attack_type for t in tasks]
     assert "subfinder_scan" in attack_types
@@ -54,4 +54,4 @@ def test_initiate_full_scan(mocker, db_session):
     assert "logic_abuse" in attack_types
     
     # Check queue publishing was called for each task
-    assert mock_publish.call_count == 7
+    assert mock_publish.call_count == 8

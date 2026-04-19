@@ -7,6 +7,7 @@ import time
 from app.database import SessionLocal
 from app.models import Task, Finding
 from app.evaluator import EvaluatorAgent
+from app.feedback_loop import FeedbackLoop
 from app.poc_generator import PoCGenerator
 from app.recon_parser import ReconParser
 
