@@ -10,3 +10,6 @@ pytest==7.4.0
 httpx==0.24.1
 openapi-schema-pydantic==1.2.4
 chromadb==0.4.24
+numpy<2.0.0
+pytest-asyncio
+pytest-mock
