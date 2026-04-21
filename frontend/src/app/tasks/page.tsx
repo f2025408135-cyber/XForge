@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { fetchTasks } from '@/lib/api';
 import { Activity, Clock, CheckCircle, AlertCircle, RefreshCw, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,22 +16,39 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED'>('ALL');
+  const mountedRef = useRef(true);
 
   const loadTasks = async () => {
     try {
       const data = await fetchTasks();
-      setTasks(data);
+      if (mountedRef.current) {
+        setTasks(data);
+      }
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadTasks();
-    const interval = setInterval(loadTasks, 5000);
-    return () => clearInterval(interval);
+    mountedRef.current = true;
+
+    // Recursive polling to prevent request pile-ups
+    const poll = async () => {
+      await loadTasks();
+      if (mountedRef.current) {
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const filteredTasks = tasks.filter(task => {

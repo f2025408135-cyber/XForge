@@ -11,6 +11,12 @@ async def test_full_system_simulation():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
+    # Try to clean up target if exists from a previous bad run
+    existing_t = db.query(Target).filter(Target.domain=="hackerone.com").first()
+    if existing_t:
+        db.delete(existing_t)
+        db.commit()
+
     # 1. Target Created
     t = Target(domain="hackerone.com")
     db.add(t)
@@ -81,4 +87,7 @@ async def test_full_system_simulation():
     assert "High confidence BOLA" in report_md
     assert "Race Condition Verified" in report_md
     
+    # Cleanup for next tests
+    db.delete(t)
+    db.commit()
     db.close()

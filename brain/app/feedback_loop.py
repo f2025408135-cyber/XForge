@@ -102,7 +102,16 @@ Return ONLY the raw JSON array matching:
                     temperature=0.8
                 )
                 
-                new_payloads = json.loads(response.choices[0].message.content).get("payloads", [])
+                content = response.choices[0].message.content
+                # Robust parsing handling Markdown formatting or trailing characters
+                content = content.strip().strip('`')
+                if content.lower().startswith('json\n'):
+                    content = content[5:]
+                if content.lower().startswith('json'):
+                    content = content[4:]
+
+                new_payloads = json.loads(content).get("payloads", [])
+
                 if new_payloads:
                     # Update iteration counter
                     task.status = f"PENDING-{iteration + 1}"

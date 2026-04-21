@@ -7,7 +7,6 @@ import time
 from app.database import SessionLocal
 from app.models import Task, Finding
 from app.evaluator import EvaluatorAgent
-
 from app.poc_generator import PoCGenerator
 from app.recon_parser import ReconParser
 
@@ -75,7 +74,6 @@ class ResultConsumer:
                 # --- Phase 2: Vulnerability Evaluation & Feedback Loop ---
                 import asyncio
                 from app.feedback_loop import FeedbackLoop
-
                 
                 feedback_agent = FeedbackLoop(db)
                 loop = asyncio.new_event_loop()
@@ -130,17 +128,22 @@ class ResultConsumer:
             ch.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
 
     def start_consuming(self):
-        try:
-            params = pika.URLParameters(RABBITMQ_URL)
-            connection = pika.BlockingConnection(params)
-            channel = connection.channel()
-            channel.queue_declare(queue='fuzz_results', durable=True)
-            
-            channel.basic_consume(queue='fuzz_results', on_message_callback=self.callback)
-            print(" [*] Python Brain Consumer waiting for results on 'fuzz_results'...")
-            channel.start_consuming()
-        except pika.exceptions.AMQPConnectionError as e:
-            print(f"RabbitMQ connection failed (will retry): {e}")
+        while True:
+            try:
+                params = pika.URLParameters(RABBITMQ_URL)
+                connection = pika.BlockingConnection(params)
+                channel = connection.channel()
+                channel.queue_declare(queue='fuzz_results', durable=True)
+
+                channel.basic_consume(queue='fuzz_results', on_message_callback=self.callback)
+                print(" [*] Python Brain Consumer waiting for results on 'fuzz_results'...")
+                channel.start_consuming()
+            except pika.exceptions.AMQPConnectionError as e:
+                print(f"RabbitMQ connection failed, retrying in 5 seconds...: {e}")
+                time.sleep(5)
+            except Exception as e:
+                print(f"Unexpected error in RabbitMQ consumer: {e}")
+                time.sleep(5)
 
 def run_consumer_in_background():
     """
