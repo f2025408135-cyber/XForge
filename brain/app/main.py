@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -9,6 +10,15 @@ from .database import engine, get_db
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="XForge Brain API", description="Autonomous Offensive Security Intelligence Layer")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], # Allow all origins for the dashboard
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def startup_event():
@@ -77,6 +87,29 @@ def generate_report(target_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Target not found")
         
     return {"target_id": target_id, "markdown_report": report_md}
+
+@app.get("/targets/{target_id}/scope")
+def get_target_scope(target_id: int, db: Session = Depends(get_db)):
+    target = db.query(models.Target).filter(models.Target.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target not found")
+
+    nodes = [{"id": f"target_{target.id}", "name": target.domain, "group": 1, "val": 20}]
+    links = []
+
+    subdomains = db.query(models.Subdomain).filter(models.Subdomain.target_id == target_id).all()
+    for sub in subdomains:
+        sub_node_id = f"sub_{sub.id}"
+        nodes.append({"id": sub_node_id, "name": sub.hostname, "group": 2, "val": 10})
+        links.append({"source": f"target_{target.id}", "target": sub_node_id})
+
+        ports = db.query(models.Port).filter(models.Port.subdomain_id == sub.id).all()
+        for p in ports:
+            port_node_id = f"port_{p.id}"
+            nodes.append({"id": port_node_id, "name": f"Port {p.port_number}", "group": 3, "val": 5})
+            links.append({"source": sub_node_id, "target": port_node_id})
+
+    return {"nodes": nodes, "links": links}
 
 @app.post("/scan/full/{domain}")
 def trigger_full_scan(domain: str, db: Session = Depends(get_db)):

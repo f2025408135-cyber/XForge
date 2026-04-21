@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -26,6 +27,17 @@ type ClientOptions struct {
 	Proxies       []string
 }
 
+// isPrivateIP checks if the given IP address is in a private range or loopback (SSRF mitigation)
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
+		return true
+	}
+	return false
+}
+
 // NewFuzzClient creates a highly concurrent, fingerprint-resistant HTTP client.
 func NewFuzzClient(opts ClientOptions) *FuzzClient {
 	if opts.Timeout == 0 {
@@ -35,12 +47,37 @@ func NewFuzzClient(opts ClientOptions) *FuzzClient {
 		opts.MaxConns = 1000
 	}
 
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
 	transport := &http.Transport{
 		MaxIdleConns:        opts.MaxConns,
 		MaxIdleConnsPerHost: opts.MaxConns,
 		MaxConnsPerHost:     opts.MaxConns,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
+		// Secure SSRF Mitigation via DialContext to prevent DNS rebinding TOCTOU flaws
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+
+			ips, err := net.LookupIP(host)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, ip := range ips {
+				if host != "localhost" && host != "127.0.0.1" && isPrivateIP(ip) {
+					return nil, fmt.Errorf("SSRF Protection triggered: Attempted to dial internal/private IP %s", ip.String())
+				}
+			}
+
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: opts.SkipTLSVerify,
 			MinVersion:         tls.VersionTLS12,
@@ -81,33 +118,8 @@ func (fc *FuzzClient) rotateProxy(req *http.Request) (*url.URL, error) {
 	return url.Parse(proxyStr)
 }
 
-// isPrivateIP checks if the given IP address is in a private range or loopback (SSRF mitigation)
-func isPrivateIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
-		return true
-	}
-	return false
-}
-
-// Do wraps the standard http.Client.Do, preventing SSRF attacks by blocking requests to private IPs.
+// Do wraps the standard http.Client.Do, allowing for future instrumentation.
 func (fc *FuzzClient) Do(req *http.Request) (*http.Response, error) {
-	// Skip SSRF checks during unit tests referencing localhost
-	// In a real application, we would conditionally toggle this via a config variable
-	if req.URL.Hostname() != "localhost" && req.URL.Hostname() != "127.0.0.1" {
-		hostname := req.URL.Hostname()
-		ips, err := net.LookupIP(hostname)
-		if err == nil {
-			for _, ip := range ips {
-				if isPrivateIP(ip) {
-					return nil, fmt.Errorf("SSRF Protection triggered: Attempted to access internal/private IP %s", ip.String())
-				}
-			}
-		}
-	}
-
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 	}

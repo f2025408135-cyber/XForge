@@ -35,3 +35,9 @@ export async function fetchTasks() {
   if (!response.ok) throw new Error('Failed to fetch tasks');
   return response.json();
 }
+
+export async function fetchTargetScope(targetId: number) {
+  const response = await fetch(`${API_URL}/targets/${targetId}/scope`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Failed to fetch scope graph');
+  return response.json();
+}

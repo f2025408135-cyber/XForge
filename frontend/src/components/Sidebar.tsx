@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Target, Activity, FileText, Home } from 'lucide-react';
+import { Target, Activity, FileText, Home, Network } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -18,6 +18,7 @@ export default function Sidebar() {
     { href: '/', label: 'Dashboard', icon: Home },
     { href: '/targets', label: 'Targets', icon: Target },
     { href: '/tasks', label: 'Active Tasks', icon: Activity },
+    { href: '/scope', label: 'Attack Graph', icon: Network },
     { href: '/reports', label: 'Reports', icon: FileText },
   ];
 
@@ -25,7 +26,7 @@ export default function Sidebar() {
     <motion.div
       initial={{ x: -250 }}
       animate={{ x: 0 }}
-      className="w-64 h-full bg-slate-900/95 backdrop-blur-xl text-white flex flex-col fixed left-0 top-0 border-r border-slate-800 shadow-2xl"
+      className="w-64 h-full bg-slate-900/95 backdrop-blur-xl text-white flex flex-col fixed left-0 top-0 border-r border-slate-800 shadow-2xl z-50"
     >
       <div className="p-6">
         <motion.h1
@@ -77,7 +78,7 @@ export default function Sidebar() {
             </span>
             System Online
           </div>
-          <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded">v1.2.0</span>
+          <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded">v1.3.0</span>
         </div>
       </div>
     </motion.div>
