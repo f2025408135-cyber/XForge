@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 
 class TheoristAgent:
     """
-    Analyzes API definitions to hypothesize multi-user stateful attacks (BOLA, Logic Flaws)
+    Analyzes API definitions to hypothesize multi-user stateful attacks (BOLA, Logic Flaws, OAuth, Injection)
     and constructs Task payloads for the Executor.
     """
     def __init__(self):
@@ -25,9 +25,23 @@ class TheoristAgent:
         """
         Feeds the spec to the LLM and requests `max_workflows` payloads formatted to the Task schema.
         """
+
+        context_hints = ""
+        if attack_type == "bola":
+            context_hints = "Focus on IDOR/BOLA. Generate dual payloads testing admin vs standard user access to the same resource ID."
+        elif attack_type == "race_condition":
+            context_hints = "Focus on TOCTOU logic. Look for /checkout, /redeem, or /transfer endpoints."
+        elif attack_type == "oauth_abuse":
+            context_hints = "Focus on OAuth endpoints (/authorize, /callback). Test open redirects in redirect_uri and CSRF by removing or fixing the state parameter."
+        elif attack_type == "injection":
+            context_hints = "Focus on SQLi, XSS, SSRF in query, path, and body parameters. Supply standard polyglot injection strings."
+        elif attack_type == "logic_abuse":
+            context_hints = "Focus on multi-step state violations (e.g., bypassing a cart checkout order, negative quantity inputs)."
+
         system_prompt = f"""
 You are an expert security researcher. You are given a truncated OpenAPI JSON specification.
 Your goal is to generate JSON workflows for a fuzzer to test for {attack_type} vulnerabilities.
+{context_hints}
 
 Return ONLY valid JSON matching this schema structure exactly:
 {{

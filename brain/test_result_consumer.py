@@ -10,7 +10,7 @@ def test_consumer_callback_parses_json(mocker):
     
     mock_task = mocker.MagicMock()
     mock_task.id = 1
-    mock_task.attack_type = "bola"  # <----- Missing! The feedback_loop checks `task.attack_type == "bola"` !
+    mock_task.attack_type = "bola"
     mock_session.query().filter().first.return_value = mock_task
     
     # We mock it here:

@@ -1,7 +1,10 @@
 package httpclient
 
 import (
+	"context"
 	"crypto/tls"
+	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -24,6 +27,17 @@ type ClientOptions struct {
 	Proxies       []string
 }
 
+// isPrivateIP checks if the given IP address is in a private range or loopback (SSRF mitigation)
+func isPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
+		return true
+	}
+	return false
+}
+
 // NewFuzzClient creates a highly concurrent, fingerprint-resistant HTTP client.
 func NewFuzzClient(opts ClientOptions) *FuzzClient {
 	if opts.Timeout == 0 {
@@ -33,16 +47,40 @@ func NewFuzzClient(opts ClientOptions) *FuzzClient {
 		opts.MaxConns = 1000
 	}
 
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
 	transport := &http.Transport{
 		MaxIdleConns:        opts.MaxConns,
 		MaxIdleConnsPerHost: opts.MaxConns,
 		MaxConnsPerHost:     opts.MaxConns,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
+		// Secure SSRF Mitigation via DialContext to prevent DNS rebinding TOCTOU flaws
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+
+			ips, err := net.LookupIP(host)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, ip := range ips {
+				if host != "localhost" && host != "127.0.0.1" && isPrivateIP(ip) {
+					return nil, fmt.Errorf("SSRF Protection triggered: Attempted to dial internal/private IP %s", ip.String())
+				}
+			}
+
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: opts.SkipTLSVerify,
-			// Bypassing basic JA3/TLS fingerprinting by shuffling cipher suites (simplified approach)
-			MinVersion: tls.VersionTLS12,
+			MinVersion:         tls.VersionTLS12,
 		},
 	}
 
@@ -50,7 +88,6 @@ func NewFuzzClient(opts ClientOptions) *FuzzClient {
 		Transport: transport,
 		Timeout:   opts.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Don't follow redirects automatically during fuzzing unless explicitly needed
 			return http.ErrUseLastResponse
 		},
 	}
@@ -60,7 +97,6 @@ func NewFuzzClient(opts ClientOptions) *FuzzClient {
 		Proxies: opts.Proxies,
 	}
 
-	// Setup proxy rotation if proxies are provided
 	if len(opts.Proxies) > 0 {
 		transport.Proxy = fc.rotateProxy
 	}
@@ -68,7 +104,6 @@ func NewFuzzClient(opts ClientOptions) *FuzzClient {
 	return fc
 }
 
-// rotateProxy implements a basic round-robin proxy selector.
 func (fc *FuzzClient) rotateProxy(req *http.Request) (*url.URL, error) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
@@ -83,9 +118,8 @@ func (fc *FuzzClient) rotateProxy(req *http.Request) (*url.URL, error) {
 	return url.Parse(proxyStr)
 }
 
-// Do wraps the standard http.Client.Do, allowing for future instrumentation (like metrics logging).
+// Do wraps the standard http.Client.Do, allowing for future instrumentation.
 func (fc *FuzzClient) Do(req *http.Request) (*http.Response, error) {
-	// We can inject default fuzzing headers here (e.g., random User-Agents)
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 	}
